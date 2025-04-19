@@ -4,6 +4,7 @@ import os
 
 from app.helper_funcs.DirectoryFinder import DirectoryFinder
 
+
 coming_soon = APIRouter()
 df = DirectoryFinder()
 static_path = df.get_data_dir('static', create_if_missing=True, project_markers=['main.py'])
