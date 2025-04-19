@@ -19,6 +19,70 @@ columns:
   - name: timestamp
     type: TIMESTAMP
     constraints:
+  # Location data
+  - name: location_source
+    type: TEXT
+    constraints:
+  - name: latitude
+    type: FLOAT
+    constraints:
+  - name: longitude
+    type: FLOAT
+    constraints:
+  - name: location_accuracy
+    type: FLOAT
+    constraints:
+  - name: city
+    type: TEXT
+    constraints:
+  - name: region
+    type: TEXT
+    constraints:
+  - name: country
+    type: TEXT
+    constraints:
+  # Weather data
+  - name: temperature
+    type: FLOAT
+    constraints:
+  - name: wind_speed
+    type: FLOAT
+    constraints:
+  - name: wind_direction
+    type: FLOAT
+    constraints:
+  - name: weather_code
+    type: INTEGER
+    constraints:
+  - name: cloud_cover
+    type: FLOAT
+    constraints:
+  # Device data
+  - name: screen_width
+    type: INTEGER
+    constraints:
+  - name: screen_height
+    type: INTEGER
+    constraints:
+  - name: pixel_ratio
+    type: FLOAT
+    constraints:
+  - name: is_mobile
+    type: BOOLEAN
+    constraints:
+  - name: browser_language
+    type: TEXT
+    constraints:
+  - name: timezone
+    type: TEXT
+    constraints:
+  - name: connection_type
+    type: TEXT
+    constraints:
+  # Referral info
+  - name: referrer
+    type: TEXT
+    constraints:
   - name: created_at
     type: TIMESTAMP
     constraints: DEFAULT CURRENT_TIMESTAMP

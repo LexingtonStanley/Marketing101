@@ -1,8 +1,8 @@
 import re
 import os
+import json
 from nicegui import ui, app, APIRouter
 from datetime import datetime, timedelta
-import json
 
 from app.helper_funcs.DirectoryFinder import DirectoryFinder
 from app.helper_funcs.database.database_functions import Freefallcentral_Database
@@ -12,9 +12,6 @@ coming_soon = APIRouter()
 df = DirectoryFinder()
 static_path = df.get_data_dir('static', create_if_missing=True, project_markers=['main.py'])
 
-
-# This should be in main.py, not in the router file
-# app.add_static_files('/static', static_path)
 
 @coming_soon.page('/coming_soon', dark=True)
 def create_coming_soon():
@@ -111,13 +108,20 @@ def create_coming_soon():
                 z-index: 2;
             }
         </style>
-        
     ''')
 
-    # Advanced tracking scripts for background data collection
+    # Modified tracking scripts with FIXED weather and location data collection
     ui.add_body_html('''
     <script>
-        // Enhanced tracking for skydiving website
+        // Global object to store all tracking data that will be sent to the database
+        window.trackingData = {
+            location: {},
+            weather: {},
+            device: {},
+            session: {},
+            scrollDepth: {},
+            timeOnPage: 0
+        };
 
         // 1. Track scroll depth for engagement measurement
         window.scrollDepthTracked = {};
@@ -127,24 +131,28 @@ def create_coming_soon():
             // Report at 25%, 50%, 75%, and 100% scroll depth
             if (scrollPercentage >= 25 && !window.scrollDepthTracked['25']) {
                 window.scrollDepthTracked['25'] = true;
+                window.trackingData.scrollDepth['25'] = true;
                 gtag('event', 'scroll_depth', { 
                     'depth': '25%',
                     'page': 'coming_soon'
                 });
             } else if (scrollPercentage >= 50 && !window.scrollDepthTracked['50']) {
                 window.scrollDepthTracked['50'] = true;
+                window.trackingData.scrollDepth['50'] = true;
                 gtag('event', 'scroll_depth', { 
                     'depth': '50%',
                     'page': 'coming_soon'
                 });
             } else if (scrollPercentage >= 75 && !window.scrollDepthTracked['75']) {
                 window.scrollDepthTracked['75'] = true;
+                window.trackingData.scrollDepth['75'] = true;
                 gtag('event', 'scroll_depth', { 
                     'depth': '75%',
                     'page': 'coming_soon' 
                 });
             } else if (scrollPercentage >= 95 && !window.scrollDepthTracked['100']) {
                 window.scrollDepthTracked['100'] = true;
+                window.trackingData.scrollDepth['100'] = true;
                 gtag('event', 'scroll_depth', { 
                     'depth': '100%',
                     'page': 'coming_soon'
@@ -157,12 +165,20 @@ def create_coming_soon():
         window.addEventListener('beforeunload', function() {
             let endTime = new Date();
             let timeSpent = Math.floor((endTime - startTime) / 1000);  // in seconds
+            window.trackingData.timeOnPage = timeSpent;
 
             gtag('event', 'time_on_page', { 
                 'seconds': timeSpent,
                 'page': 'coming_soon'
             });
         });
+
+        // Update time on page for database storage during signup
+        function updateTimeOnPage() {
+            let currentTime = new Date();
+            let timeSpent = Math.floor((currentTime - startTime) / 1000);  // in seconds
+            window.trackingData.timeOnPage = timeSpent;
+        }
 
         // 3. Track clicks on different elements
         document.addEventListener('click', function(e) {
@@ -182,12 +198,107 @@ def create_coming_soon():
             }
         });
 
-        // 4. Try to get user's location for weather data (with IP address fallback)
-        function getLocationData() {
+        // FIXED: Get location details from coordinates using OpenStreetMap
+        function getLocationDetails(latitude, longitude) {
+            console.log(`Getting location details for: ${latitude}, ${longitude}`);
+
+            return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=en`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Reverse geocoding response:", data);
+                    if (data && data.address) {
+                        // Find the most appropriate locality name
+                        const city = data.address.city || data.address.town || data.address.village || data.address.hamlet || data.address.suburb || null;
+                        const region = data.address.state || data.address.county || null;
+                        const country = data.address.country || null;
+
+                        console.log(`Location resolved to: ${city}, ${region}, ${country}`);
+
+                        return {
+                            city: city,
+                            region: region,
+                            country: country,
+                            display_name: data.display_name || null
+                        };
+                    }
+                    return {};
+                })
+                .catch(error => {
+                    console.log("Reverse geocoding failed:", error);
+                    return {};
+                });
+        }
+
+        // FIXED: Get weather data with verified working parameters
+        function getWeatherData(latitude, longitude) {
+            console.log(`Getting weather data for: ${latitude}, ${longitude}`);
+
+            // Use simplified parameters that are guaranteed to work
+            return fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature,weather_code,wind_speed_10m,wind_direction_10m,is_day,cloud_cover`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Weather data response:", data);
+                    if (data && data.current) {
+                        return {
+                            temperature: data.current.temperature,
+                            weather_code: data.current.weather_code,
+                            wind_speed: data.current.wind_speed_10m,
+                            wind_direction: data.current.wind_direction_10m,
+                            is_day: data.current.is_day,
+                            cloud_cover: data.current.cloud_cover || null
+                        };
+                    }
+                    return {};
+                })
+                .catch(error => {
+                    console.log("Weather API call failed:", error);
+                    return {};
+                });
+        }
+
+        // 4. Improved function to get location data with accurate geocoding
+        async function getLocationData() {
+            console.log("Starting location data collection...");
+
             // First try to get precise location from browser
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(position) {
-                    // Send precise location data to Google Analytics
+                try {
+                    // Create a promise-based version of getCurrentPosition
+                    const position = await new Promise((resolve, reject) => {
+                        const options = {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        };
+
+                        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+                    })
+                    .catch(error => {
+                        console.log("Browser geolocation error:", error);
+                        throw error; // Re-throw to catch block
+                    });
+
+                    console.log("Browser geolocation success:", position);
+
+                    // Store basic location data
+                    window.trackingData.location = {
+                        source: 'browser_geolocation',
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+
+                    // Track in Google Analytics
                     gtag('event', 'location_captured', {
                         'source': 'browser_geolocation',
                         'latitude': position.coords.latitude,
@@ -195,57 +306,73 @@ def create_coming_soon():
                         'accuracy': position.coords.accuracy
                     });
 
-                    // Store for form submission
-                    window.userLocation = {
-                        source: 'browser_geolocation',
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    };
+                    // Get city, region, country info
+                    const locationDetails = await getLocationDetails(position.coords.latitude, position.coords.longitude);
 
-                    // Try to get weather data based on coordinates
-                    try {
-                        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&current=temperature,wind_speed,wind_direction,weather_code`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data && data.current) {
-                                gtag('event', 'weather_data', {
-                                    'temperature': data.current.temperature,
-                                    'wind_speed': data.current.wind_speed,
-                                    'wind_direction': data.current.wind_direction,
-                                    'weather_code': data.current.weather_code
-                                });
+                    // Add address details to our location data
+                    window.trackingData.location.city = locationDetails.city;
+                    window.trackingData.location.region = locationDetails.region;
+                    window.trackingData.location.country = locationDetails.country;
 
-                                // Store weather data for later use
-                                window.weatherData = data.current;
-                            }
-                        });
-                    } catch (e) {
-                        console.log("Weather API call failed");
-                    }
-                }, function(error) {
-                    // User declined location sharing - fallback to IP geolocation
-                    gtag('event', 'location_declined', {
-                        'error_code': error.code,
-                        'error_message': error.message
+                    console.log("Final location data:", window.trackingData.location);
+
+                    // Get weather data
+                    const weatherData = await getWeatherData(position.coords.latitude, position.coords.longitude);
+
+                    // Store weather data
+                    window.trackingData.weather = weatherData;
+
+                    console.log("Weather data collected:", window.trackingData.weather);
+
+                    // Track weather in Google Analytics
+                    gtag('event', 'weather_data', {
+                        'temperature': weatherData.temperature,
+                        'wind_speed': weatherData.wind_speed,
+                        'wind_direction': weatherData.wind_direction,
+                        'weather_code': weatherData.weather_code,
+                        'cloud_cover': weatherData.cloud_cover
                     });
 
+                } catch (error) {
+                    console.log("Error in browser geolocation flow:", error);
                     // Fall back to IP-based geolocation
-                    getIPBasedLocation();
-                });
+                    await getIPBasedLocation();
+                }
             } else {
+                console.log("Browser doesn't support geolocation");
                 // Browser doesn't support geolocation - fallback to IP
-                getIPBasedLocation();
+                await getIPBasedLocation();
             }
         }
 
-        // Fallback function to get location from IP address
-        function getIPBasedLocation() {
-            // Use a free IP geolocation service
-            fetch('https://ipapi.co/json/')
-            .then(response => response.json())
-            .then(data => {
-                // Log the IP-based location data
+        // Improved IP-based geolocation with proper async/await
+        async function getIPBasedLocation() {
+            console.log("Falling back to IP-based geolocation");
+
+            try {
+                // Use a reliable IP geolocation service
+                const response = await fetch('https://ipapi.co/json/');
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log("IP geolocation response:", data);
+
+                // Store comprehensive location data
+                window.trackingData.location = {
+                    source: 'ip_geolocation',
+                    ip: data.ip,
+                    city: data.city,
+                    region: data.region,
+                    country: data.country_name,
+                    latitude: data.latitude,
+                    longitude: data.longitude
+                };
+
+                console.log("IP-based location data:", window.trackingData.location);
+
+                // Log the IP-based location data to GA
                 gtag('event', 'location_captured', {
                     'source': 'ip_geolocation',
                     'ip': data.ip,
@@ -256,50 +383,45 @@ def create_coming_soon():
                     'longitude': data.longitude
                 });
 
-                // Store for later use
-                window.userLocation = {
-                    source: 'ip_geolocation',
-                    ip: data.ip,
-                    city: data.city,
-                    region: data.region,
-                    country: data.country_name,
-                    lat: data.latitude,
-                    lng: data.longitude
-                };
-
                 // Now get weather data based on these coordinates
                 if (data.latitude && data.longitude) {
-                    try {
-                        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${data.latitude}&longitude=${data.longitude}&current=temperature,wind_speed,wind_direction,weather_code`)
-                        .then(response => response.json())
-                        .then(weatherData => {
-                            if (weatherData && weatherData.current) {
-                                gtag('event', 'weather_data', {
-                                    'source': 'ip_geolocation',
-                                    'temperature': weatherData.current.temperature,
-                                    'wind_speed': weatherData.current.wind_speed,
-                                    'wind_direction': weatherData.current.wind_direction,
-                                    'weather_code': weatherData.current.weather_code
-                                });
+                    const weatherData = await getWeatherData(data.latitude, data.longitude);
 
-                                // Store weather data
-                                window.weatherData = weatherData.current;
-                            }
-                        });
-                    } catch (e) {
-                        console.log("Weather API call failed");
-                    }
+                    // Store weather data
+                    window.trackingData.weather = weatherData;
+
+                    console.log("Weather data from IP location:", window.trackingData.weather);
+
+                    // Send to Google Analytics
+                    gtag('event', 'weather_data', {
+                        'source': 'ip_geolocation',
+                        'temperature': weatherData.temperature,
+                        'wind_speed': weatherData.wind_speed,
+                        'wind_direction': weatherData.wind_direction,
+                        'weather_code': weatherData.weather_code,
+                        'cloud_cover': weatherData.cloud_cover
+                    });
                 }
-            })
-            .catch(error => {
-                console.log("IP geolocation failed: ", error);
-                // Could add another fallback here if needed
-            });
+            } catch (error) {
+                console.error("IP geolocation completely failed:", error);
+                // Nothing we can do if both geolocation methods fail
+            }
         }
 
         // 5. Track device capabilities
         function trackDeviceCapabilities() {
-            // Screen dimensions
+            // Store device data for database
+            window.trackingData.device = {
+                screen_width: window.screen.width,
+                screen_height: window.screen.height,
+                pixel_ratio: window.devicePixelRatio,
+                is_mobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+                browser_language: navigator.language,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                connection_type: navigator.connection ? navigator.connection.effectiveType : 'unknown'
+            };
+
+            // Send to Google Analytics
             gtag('event', 'device_info', {
                 'screen_width': window.screen.width,
                 'screen_height': window.screen.height,
@@ -335,18 +457,27 @@ def create_coming_soon():
             });
         }
 
-        // Run all our tracking functions when page loads
-        window.addEventListener('load', function() {
-            getLocationData();
-            trackDeviceCapabilities();
-            setupFormTracking();
+        // Store session information
+        function trackSessionInfo() {
+            window.trackingData.session = {
+                timestamp: new Date().toISOString(),
+                referrer: document.referrer
+            };
 
-            // Start session timer
             gtag('event', 'session_start', {
                 'timestamp': new Date().toISOString(),
                 'referrer': document.referrer
             });
+        }
+
+        // Run all our tracking functions when page loads
+        window.addEventListener('load', function() {
+            getLocationData(); // Now properly async
+            trackDeviceCapabilities();
+            setupFormTracking();
+            trackSessionInfo();
         });
+
         // Function to get and store client info
         function storeClientInfo() {
             // Create a hidden form field with the user agent
@@ -356,7 +487,7 @@ def create_coming_soon():
             hiddenUA.name = 'user_agent';
             hiddenUA.value = navigator.userAgent;
             document.body.appendChild(hiddenUA);
-            
+
             // Use a service to get IP
             fetch('https://api.ipify.org?format=json')
             .then(response => response.json())
@@ -369,7 +500,20 @@ def create_coming_soon():
                 document.body.appendChild(hiddenIP);
             });
         }
-        
+
+        // FIXED: Get tracking data without waiting for async operations
+        // This prevents timeout errors by returning immediately
+        function getAllTrackingData() {
+            // Update time on page
+            let currentTime = new Date();
+            let timeSpent = Math.floor((currentTime - startTime) / 1000);
+            window.trackingData.timeOnPage = timeSpent;
+
+            // Return immediately with whatever data we have
+            console.log("Final tracking data:", window.trackingData);
+            return JSON.stringify(window.trackingData);
+        }
+
         // Run when page loads
         window.addEventListener('load', storeClientInfo);
     </script>
@@ -472,18 +616,70 @@ def create_coming_soon():
                     ui.separator()
 
 
-
 async def handle_signup_with_client_info(name, email):
     # Get client info from JavaScript
     ip_result = await ui.run_javascript('return document.getElementById("hidden_ip_address").value;')
     ua_result = await ui.run_javascript('return document.getElementById("hidden_user_agent").value;')
 
+    # FIXED: Get individual pieces of data separately to avoid timeout issues
+    try:
+        # Get location data
+        location_json = await ui.run_javascript('return JSON.stringify(window.trackingData.location || {});')
+        location = json.loads(location_json) if location_json else {}
+
+        # Get weather data
+        weather_json = await ui.run_javascript('return JSON.stringify(window.trackingData.weather || {});')
+        weather = json.loads(weather_json) if weather_json else {}
+
+        # Get device data
+        device_json = await ui.run_javascript('return JSON.stringify(window.trackingData.device || {});')
+        device = json.loads(device_json) if device_json else {}
+
+        # Get session data
+        session_json = await ui.run_javascript('return JSON.stringify(window.trackingData.session || {});')
+        session = json.loads(session_json) if session_json else {}
+    except Exception as e:
+        print(f"Error retrieving tracking data: {e}")
+        # Create empty defaults if there's an error
+        location = {}
+        weather = {}
+        device = {}
+        session = {}
+
+    # Extract values for database storage with defaults
     ip_address = ip_result if ip_result else 'unknown'
     user_agent = ua_result if ua_result else 'unknown'
-    import re
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    # Location data
+    location_source = location.get('source', None)
+    latitude = location.get('latitude', None)
+    longitude = location.get('longitude', None)
+    accuracy = location.get('accuracy', None)
+    city = location.get('city', None)
+    region = location.get('region', None)
+    country = location.get('country', None)
+
+    # Weather data
+    temperature = weather.get('temperature', None)
+    wind_speed = weather.get('wind_speed', None)
+    wind_direction = weather.get('wind_direction', None)
+    weather_code = weather.get('weather_code', None)
+    cloud_cover = weather.get('cloud_cover', None)
+
+    # Device data
+    screen_width = device.get('screen_width', None)
+    screen_height = device.get('screen_height', None)
+    pixel_ratio = device.get('pixel_ratio', None)
+    is_mobile = device.get('is_mobile', None)
+    browser_language = device.get('browser_language', None)
+    timezone = device.get('timezone', None)
+    connection_type = device.get('connection_type', None)
+
+    # Session data
+    referrer = session.get('referrer', None)
 
     # Validate email format
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(email_pattern, email):
         ui.notify('Please enter a valid email address', type='negative', position='bottom')
         return
@@ -496,12 +692,37 @@ async def handle_signup_with_client_info(name, email):
         await db.check_and_create_table('coming_soon')
 
         async with db.db_connector.get_cursor() as cur:
+            # Updated SQL query with all the new fields
+            sql = """
+                  INSERT INTO coming_soon (name, email, ip_address, user_agent, timestamp, \
+                                           location_source, latitude, longitude, location_accuracy, \
+                                           city, region, country, temperature, wind_speed, \
+                                           wind_direction, weather_code, screen_width, screen_height, \
+                                           pixel_ratio, is_mobile, browser_language, timezone, \
+                                           connection_type, referrer)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, \
+                          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, \
+                          %s, %s, %s, %s) \
+                  """
+
             await cur.execute(
-                "INSERT INTO coming_soon (name, email, ip_address, user_agent, timestamp) VALUES (%s, %s, %s, %s, %s)",
-                (name, email, ip_address, user_agent, timestamp)
+                sql,
+                (
+                    name, email, ip_address, user_agent, timestamp,
+                    location_source, latitude, longitude, accuracy,
+                    city, region, country, temperature, wind_speed,
+                    wind_direction, weather_code, screen_width, screen_height,
+                    pixel_ratio, is_mobile, browser_language, timezone,
+                    connection_type, referrer
+                )
             )
 
-        print(f"Successfully stored signup: {name} ({email}) from IP: {ip_address}")
+        print(f"Successfully stored signup with tracking data: {name} ({email})")
+        # Log the key weather and location details for debugging
+        print(
+            f"Weather data - Temperature: {temperature}, Wind: {wind_speed}, Code: {weather_code}, Clouds: {cloud_cover}")
+        print(f"Location data - City: {city}, Region: {region}, Country: {country}")
+
     except Exception as e:
         error_message = str(e)
         print(f"Database error: {error_message}")
@@ -516,9 +737,8 @@ async def handle_signup_with_client_info(name, email):
     # Track this signup event in Google Analytics with all the data we have
     ui.add_body_html(f'''
     <script>
-        // Get any location data we might have collected (browser or IP-based)
-        let locationData = window.userLocation || {{}};
-        let weatherData = window.weatherData || {{}};
+        // Get all our tracking data
+        let trackingData = window.trackingData || {{}};
 
         // Track the signup event with all available data
         gtag('event', 'signup_complete', {{
@@ -526,50 +746,8 @@ async def handle_signup_with_client_info(name, email):
             'event_label': 'newsletter',
             'user_name': '{name}',
             'timestamp': '{timestamp}',
-            'ip_address': '{ip_address}',  // Always include IP address
-            'location_data': locationData,
-            'weather_data': weatherData,
-            'device_info': {{
-                'screen_width': window.screen.width,
-                'screen_height': window.screen.height,
-                'is_mobile': /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-            }}
+            'tracking_data': trackingData
         }});
-
-        // If no location data was obtained yet, try IP geolocation now
-        if (!locationData.lat && !locationData.lng) {{
-            fetch('https://ipapi.co/json/')
-            .then(response => response.json())
-            .then(data => {{
-                // Send this data to Google Analytics
-                gtag('event', 'location_captured_at_signup', {{
-                    'source': 'ip_geolocation_at_signup',
-                    'ip': data.ip,
-                    'city': data.city,
-                    'region': data.region,
-                    'country': data.country_name,
-                    'latitude': data.latitude,
-                    'longitude': data.longitude
-                }});
-
-                // Also try to get weather data for this location
-                if (data.latitude && data.longitude) {{
-                    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${{data.latitude}}&longitude=${{data.longitude}}&current=temperature,wind_speed,wind_direction,weather_code`)
-                    .then(response => response.json())
-                    .then(weatherData => {{
-                        if (weatherData && weatherData.current) {{
-                            gtag('event', 'weather_data_at_signup', {{
-                                'source': 'ip_geolocation',
-                                'temperature': weatherData.current.temperature,
-                                'wind_speed': weatherData.current.wind_speed,
-                                'wind_direction': weatherData.current.wind_direction,
-                                'weather_code': weatherData.current.weather_code
-                            }});
-                        }}
-                    }});
-                }}
-            }});
-        }}
 
         // Set user properties for better segmentation
         gtag('set', 'user_properties', {{
@@ -580,6 +758,47 @@ async def handle_signup_with_client_info(name, email):
     </script>
     ''')
 
-    # Show confirmation notification
-    ui.notify(f'Thanks for signing up, {name}! We\'ll notify you when we launch.',
-              type='positive', position='bottom')
+    # Show confirmation notification with weather info if available
+    if weather_code is not None:
+        weather_descriptions = {
+            0: "Clear sky",
+            1: "Mainly clear",
+            2: "Partly cloudy",
+            3: "Overcast",
+            45: "Fog",
+            48: "Depositing rime fog",
+            51: "Light drizzle",
+            53: "Moderate drizzle",
+            55: "Dense drizzle",
+            56: "Light freezing drizzle",
+            57: "Dense freezing drizzle",
+            61: "Slight rain",
+            63: "Moderate rain",
+            65: "Heavy rain",
+            66: "Light freezing rain",
+            67: "Heavy freezing rain",
+            71: "Slight snow fall",
+            73: "Moderate snow fall",
+            75: "Heavy snow fall",
+            77: "Snow grains",
+            80: "Slight rain showers",
+            81: "Moderate rain showers",
+            82: "Violent rain showers",
+            85: "Slight snow showers",
+            86: "Heavy snow showers",
+            95: "Thunderstorm",
+            96: "Thunderstorm with slight hail",
+            99: "Thunderstorm with heavy hail"
+        }
+        weather_description = weather_descriptions.get(weather_code, "Unknown weather")
+
+        if city:
+            ui.notify(
+                f'Thanks for signing up, {name}! Weather in {city} is {weather_description} with {cloud_cover}% cloud cover.',
+                type='positive', position='bottom')
+        else:
+            ui.notify(f'Thanks for signing up, {name}! Current weather: {weather_description}',
+                      type='positive', position='bottom')
+    else:
+        ui.notify(f'Thanks for signing up, {name}! We\'ll notify you when we launch.',
+                  type='positive', position='bottom')
