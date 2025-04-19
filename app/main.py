@@ -22,4 +22,4 @@ app.include_router(coming_soon)
 if __name__ in {"__main__", "__mp_main__"}:
     print('hello')
 
-    ui.run(title='Free Fall Central', port=8080)
+    ui.run(title='Free Fall Central - The Skydiving Hub', port=8080)

@@ -7,7 +7,7 @@ from dotenv import load_dotenv, find_dotenv
 # Configure the logger
 x = setup_logger()
 load_dotenv(find_dotenv('env.env'))
-class MarketDatabaseConnector:
+class DatabaseConnector:
     """
     A singleton class that manages an asynchronous pool of PostgreSQL database connections via aiopg.
     It provides async context manager capabilities for safely acquiring and releasing
@@ -18,7 +18,7 @@ class MarketDatabaseConnector:
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            cls._instance = super(MarketDatabaseConnector, cls).__new__(cls)
+            cls._instance = super(DatabaseConnector, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):

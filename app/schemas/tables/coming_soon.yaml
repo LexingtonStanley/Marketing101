@@ -1,0 +1,12 @@
+# app/schemas/tables/coming_soon.yaml
+name: coming_soon
+columns:
+  - name: id
+    type: SERIAL
+    constraints: PRIMARY KEY
+  - name: name
+    type: TEXT
+    constraints:
+  - name: email
+    type: TEXT
+    constraints:
