@@ -75,6 +75,9 @@ class DatabaseConnector:
         """
         Acquire a cursor using a RealDictCursor so that rows are returned as dictionaries.
         """
+        # Make sure we're initialized before trying to use the pool
+        if not getattr(self, 'initialized', False) or self.pool is None:
+            await self.init()
         try:
             async with self.pool.acquire() as conn:
                 async with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -84,6 +87,9 @@ class DatabaseConnector:
             raise
 
     async def get_connection(self):
+        # Make sure we're initialized before trying to use the pool
+        if not getattr(self, 'initialized', False) or self.pool is None:
+            await self.init()
         try:
             conn = await self.pool.acquire()
             x.debug("Successfully retrieved a connection from the async pool.")

@@ -1,9 +1,13 @@
+import re
+import os
 from nicegui import ui, app, APIRouter
 from datetime import datetime, timedelta
-import os
+import json
 
 from app.helper_funcs.DirectoryFinder import DirectoryFinder
+from app.helper_funcs.database.database_functions import Freefallcentral_Database
 
+db = Freefallcentral_Database()
 coming_soon = APIRouter()
 df = DirectoryFinder()
 static_path = df.get_data_dir('static', create_if_missing=True, project_markers=['main.py'])
@@ -15,6 +19,17 @@ static_path = df.get_data_dir('static', create_if_missing=True, project_markers=
 @coming_soon.page('/coming_soon', dark=True)
 def create_coming_soon():
     video_path = os.path.join(static_path, 'tandemexit_sunset_clouds.mp4')
+
+    # Track coming_soon page view
+    ui.add_body_html('''
+    <script>
+        gtag('event', 'page_view', {
+            'page_title': 'Coming Soon',
+            'page_location': window.location.href,
+            'page_path': '/coming_soon'
+        });
+    </script>
+    ''')
 
     # Add head elements with modern, high-impact fonts and enhanced styles
     ui.add_head_html('''
@@ -96,6 +111,268 @@ def create_coming_soon():
                 z-index: 2;
             }
         </style>
+        
+    ''')
+
+    # Advanced tracking scripts for background data collection
+    ui.add_body_html('''
+    <script>
+        // Enhanced tracking for skydiving website
+
+        // 1. Track scroll depth for engagement measurement
+        window.scrollDepthTracked = {};
+        window.addEventListener('scroll', function() {
+            let scrollPercentage = Math.floor((window.scrollY + window.innerHeight) / document.body.scrollHeight * 100);
+
+            // Report at 25%, 50%, 75%, and 100% scroll depth
+            if (scrollPercentage >= 25 && !window.scrollDepthTracked['25']) {
+                window.scrollDepthTracked['25'] = true;
+                gtag('event', 'scroll_depth', { 
+                    'depth': '25%',
+                    'page': 'coming_soon'
+                });
+            } else if (scrollPercentage >= 50 && !window.scrollDepthTracked['50']) {
+                window.scrollDepthTracked['50'] = true;
+                gtag('event', 'scroll_depth', { 
+                    'depth': '50%',
+                    'page': 'coming_soon'
+                });
+            } else if (scrollPercentage >= 75 && !window.scrollDepthTracked['75']) {
+                window.scrollDepthTracked['75'] = true;
+                gtag('event', 'scroll_depth', { 
+                    'depth': '75%',
+                    'page': 'coming_soon' 
+                });
+            } else if (scrollPercentage >= 95 && !window.scrollDepthTracked['100']) {
+                window.scrollDepthTracked['100'] = true;
+                gtag('event', 'scroll_depth', { 
+                    'depth': '100%',
+                    'page': 'coming_soon'
+                });
+            }
+        });
+
+        // 2. Track time on page
+        let startTime = new Date();
+        window.addEventListener('beforeunload', function() {
+            let endTime = new Date();
+            let timeSpent = Math.floor((endTime - startTime) / 1000);  // in seconds
+
+            gtag('event', 'time_on_page', { 
+                'seconds': timeSpent,
+                'page': 'coming_soon'
+            });
+        });
+
+        // 3. Track clicks on different elements
+        document.addEventListener('click', function(e) {
+            // Try to identify what was clicked
+            let targetElement = e.target;
+            let elementType = targetElement.tagName;
+            let elementClass = targetElement.className;
+            let elementId = targetElement.id;
+
+            // Only track meaningful clicks (not just background)
+            if (elementType || elementClass || elementId) {
+                gtag('event', 'element_click', {
+                    'element_type': elementType,
+                    'element_class': elementClass,
+                    'element_id': elementId
+                });
+            }
+        });
+
+        // 4. Try to get user's location for weather data (with IP address fallback)
+        function getLocationData() {
+            // First try to get precise location from browser
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    // Send precise location data to Google Analytics
+                    gtag('event', 'location_captured', {
+                        'source': 'browser_geolocation',
+                        'latitude': position.coords.latitude,
+                        'longitude': position.coords.longitude,
+                        'accuracy': position.coords.accuracy
+                    });
+
+                    // Store for form submission
+                    window.userLocation = {
+                        source: 'browser_geolocation',
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+
+                    // Try to get weather data based on coordinates
+                    try {
+                        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&current=temperature,wind_speed,wind_direction,weather_code`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data && data.current) {
+                                gtag('event', 'weather_data', {
+                                    'temperature': data.current.temperature,
+                                    'wind_speed': data.current.wind_speed,
+                                    'wind_direction': data.current.wind_direction,
+                                    'weather_code': data.current.weather_code
+                                });
+
+                                // Store weather data for later use
+                                window.weatherData = data.current;
+                            }
+                        });
+                    } catch (e) {
+                        console.log("Weather API call failed");
+                    }
+                }, function(error) {
+                    // User declined location sharing - fallback to IP geolocation
+                    gtag('event', 'location_declined', {
+                        'error_code': error.code,
+                        'error_message': error.message
+                    });
+
+                    // Fall back to IP-based geolocation
+                    getIPBasedLocation();
+                });
+            } else {
+                // Browser doesn't support geolocation - fallback to IP
+                getIPBasedLocation();
+            }
+        }
+
+        // Fallback function to get location from IP address
+        function getIPBasedLocation() {
+            // Use a free IP geolocation service
+            fetch('https://ipapi.co/json/')
+            .then(response => response.json())
+            .then(data => {
+                // Log the IP-based location data
+                gtag('event', 'location_captured', {
+                    'source': 'ip_geolocation',
+                    'ip': data.ip,
+                    'city': data.city,
+                    'region': data.region,
+                    'country': data.country_name,
+                    'latitude': data.latitude,
+                    'longitude': data.longitude
+                });
+
+                // Store for later use
+                window.userLocation = {
+                    source: 'ip_geolocation',
+                    ip: data.ip,
+                    city: data.city,
+                    region: data.region,
+                    country: data.country_name,
+                    lat: data.latitude,
+                    lng: data.longitude
+                };
+
+                // Now get weather data based on these coordinates
+                if (data.latitude && data.longitude) {
+                    try {
+                        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${data.latitude}&longitude=${data.longitude}&current=temperature,wind_speed,wind_direction,weather_code`)
+                        .then(response => response.json())
+                        .then(weatherData => {
+                            if (weatherData && weatherData.current) {
+                                gtag('event', 'weather_data', {
+                                    'source': 'ip_geolocation',
+                                    'temperature': weatherData.current.temperature,
+                                    'wind_speed': weatherData.current.wind_speed,
+                                    'wind_direction': weatherData.current.wind_direction,
+                                    'weather_code': weatherData.current.weather_code
+                                });
+
+                                // Store weather data
+                                window.weatherData = weatherData.current;
+                            }
+                        });
+                    } catch (e) {
+                        console.log("Weather API call failed");
+                    }
+                }
+            })
+            .catch(error => {
+                console.log("IP geolocation failed: ", error);
+                // Could add another fallback here if needed
+            });
+        }
+
+        // 5. Track device capabilities
+        function trackDeviceCapabilities() {
+            // Screen dimensions
+            gtag('event', 'device_info', {
+                'screen_width': window.screen.width,
+                'screen_height': window.screen.height,
+                'pixel_ratio': window.devicePixelRatio,
+                'is_mobile': /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+                'browser': navigator.userAgent,
+                'language': navigator.language,
+                'timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+                'connection_type': navigator.connection ? navigator.connection.effectiveType : 'unknown'
+            });
+        }
+
+        // 6. Track form interactions
+        function setupFormTracking() {
+            // Track form field focus and blur events
+            document.querySelectorAll('input, button').forEach(function(element) {
+                element.addEventListener('focus', function() {
+                    gtag('event', 'form_field_focus', {
+                        'field_type': element.type,
+                        'field_name': element.name || element.id || element.placeholder
+                    });
+                });
+
+                if (element.type === 'text' || element.type === 'email') {
+                    element.addEventListener('blur', function() {
+                        gtag('event', 'form_field_completed', {
+                            'field_type': element.type,
+                            'field_name': element.name || element.id || element.placeholder,
+                            'has_value': element.value.length > 0
+                        });
+                    });
+                }
+            });
+        }
+
+        // Run all our tracking functions when page loads
+        window.addEventListener('load', function() {
+            getLocationData();
+            trackDeviceCapabilities();
+            setupFormTracking();
+
+            // Start session timer
+            gtag('event', 'session_start', {
+                'timestamp': new Date().toISOString(),
+                'referrer': document.referrer
+            });
+        });
+        // Function to get and store client info
+        function storeClientInfo() {
+            // Create a hidden form field with the user agent
+            let hiddenUA = document.createElement('input');
+            hiddenUA.type = 'hidden';
+            hiddenUA.id = 'hidden_user_agent';
+            hiddenUA.name = 'user_agent';
+            hiddenUA.value = navigator.userAgent;
+            document.body.appendChild(hiddenUA);
+            
+            // Use a service to get IP
+            fetch('https://api.ipify.org?format=json')
+            .then(response => response.json())
+            .then(data => {
+                let hiddenIP = document.createElement('input');
+                hiddenIP.type = 'hidden';
+                hiddenIP.id = 'hidden_ip_address';
+                hiddenIP.name = 'ip_address';
+                hiddenIP.value = data.ip;
+                document.body.appendChild(hiddenIP);
+            });
+        }
+        
+        // Run when page loads
+        window.addEventListener('load', storeClientInfo);
+    </script>
     ''')
 
     # Create a scrollable container for the entire page
@@ -131,9 +408,10 @@ def create_coming_soon():
                         'font-weight: 1000; letter-spacing: 2px;')
 
                 # Subtitle with more modern styling and enhanced shadow
-                ui.label('Your Ultimate Skydiving Journey Awaits').style(
+                ui.label('Your Ultimate Skydiving Adventure Awaits').style(
                     'color: white; font-size: 1.75rem; margin-bottom: 2rem; font-weight: 700; '
-                    'text-shadow: 2px 2px 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.7); letter-spacing: 1px;')
+                    'text-shadow: 2px 2px 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.7); letter-spacing: 1px; '
+                    'text-decoration: underline;')
 
                 # Coming Soon with animated effect
                 ui.label('Coming Soon...').classes('abril-fatface pulse-animation').style(
@@ -141,7 +419,8 @@ def create_coming_soon():
                     'text-shadow: 2px 2px 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.7); letter-spacing: 3px;')
 
                 # Description text with improved readability and shadow
-                ui.label("From Tandem Skydives with the experts, to Accelerated Free Fall Courses (AFF) and licenced skydiving. We're crafting a hub for the ultimate skydiving experience!").style(
+                ui.label(
+                    "From Tandem Skydives with the experts, to Accelerated Free Fall Courses (AFF) and licenced skydiving. We're crafting a hub for the ultimate skydiving experience!").style(
                     'color: white; font-size: 1.5rem; margin-bottom: 1.5rem; font-weight: 600; '
                     'text-shadow: 2px 2px 6px rgba(0,0,0,0.9), 0 0 15px rgba(0,0,0,0.8); max-width: 90%;')
 
@@ -175,9 +454,9 @@ def create_coming_soon():
 
                     # Button in its own container for better mobile layout
                     # High-impact button styling
-                    ui.button('SIGN UP', on_click=lambda: handle_signup(name_input.value, email_input.value),
-                              color=None).classes(
-                        'btn-signup').style(
+                    ui.button('SIGN UP',
+                              on_click=lambda: handle_signup_with_client_info(name_input.value, email_input.value),
+                              color=None).classes('btn-signup').style(
                         'background: linear-gradient(135deg, #BDE038 66%, #506266 100%); color: #10454F; font-weight: 800; '
                         'padding: 1rem 2rem; border-radius: 0.75rem; border: none; cursor: pointer; '
                         'box-shadow: 0 4px 15px rgba(0,0,0,0.2); text-transform: uppercase; letter-spacing: 2px; '
@@ -188,13 +467,119 @@ def create_coming_soon():
                     ui.separator()
                     ui.label(
                         "'He who leaps into the void, owes no explanation to those who merely stand and watch'").style(
-                    'color: white; margin-bottom: 1.5rem; margin-top: 1.5rem; font-size: 1.1rem; font-weight: 300; '
-                    'text-shadow: 2px 2px 6px rgba(0,0,0,0.9), 0 0 15px rgba(0,0,0,0.8); max-width: 100%;')
+                        'color: white; margin-bottom: 1.5rem; margin-top: 1.5rem; font-size: 1.1rem; font-weight: 300; '
+                        'text-shadow: 2px 2px 6px rgba(0,0,0,0.9), 0 0 15px rgba(0,0,0,0.8); max-width: 100%;')
                     ui.separator()
-def handle_signup(name, email):
-    # Enhanced signup logic that includes name field
-    print(f"Signup requested for {name} with email: {email}")
-    # Add database insertion, email confirmation, etc.
 
-    # Example of showing a confirmation dialog
-    ui.notify(f'Thanks for signing up, {name}! We\'ll notify you when we launch.', type='positive', position='bottom')
+
+
+async def handle_signup_with_client_info(name, email):
+    # Get client info from JavaScript
+    ip_result = await ui.run_javascript('return document.getElementById("hidden_ip_address").value;')
+    ua_result = await ui.run_javascript('return document.getElementById("hidden_user_agent").value;')
+
+    ip_address = ip_result if ip_result else 'unknown'
+    user_agent = ua_result if ua_result else 'unknown'
+    import re
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    # Validate email format
+    if not re.match(email_pattern, email):
+        ui.notify('Please enter a valid email address', type='negative', position='bottom')
+        return
+
+    # Get the current timestamp
+    timestamp = datetime.now()
+
+    # Store data in database
+    try:
+        await db.check_and_create_table('coming_soon')
+
+        async with db.db_connector.get_cursor() as cur:
+            await cur.execute(
+                "INSERT INTO coming_soon (name, email, ip_address, user_agent, timestamp) VALUES (%s, %s, %s, %s, %s)",
+                (name, email, ip_address, user_agent, timestamp)
+            )
+
+        print(f"Successfully stored signup: {name} ({email}) from IP: {ip_address}")
+    except Exception as e:
+        error_message = str(e)
+        print(f"Database error: {error_message}")
+
+        if "unique constraint" in error_message.lower():
+            ui.notify('This email is already registered with us', type='warning', position='bottom')
+            return
+        else:
+            ui.notify('There was an error processing your signup', type='negative', position='bottom')
+            return
+
+    # Track this signup event in Google Analytics with all the data we have
+    ui.add_body_html(f'''
+    <script>
+        // Get any location data we might have collected (browser or IP-based)
+        let locationData = window.userLocation || {{}};
+        let weatherData = window.weatherData || {{}};
+
+        // Track the signup event with all available data
+        gtag('event', 'signup_complete', {{
+            'event_category': 'conversion',
+            'event_label': 'newsletter',
+            'user_name': '{name}',
+            'timestamp': '{timestamp}',
+            'ip_address': '{ip_address}',  // Always include IP address
+            'location_data': locationData,
+            'weather_data': weatherData,
+            'device_info': {{
+                'screen_width': window.screen.width,
+                'screen_height': window.screen.height,
+                'is_mobile': /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            }}
+        }});
+
+        // If no location data was obtained yet, try IP geolocation now
+        if (!locationData.lat && !locationData.lng) {{
+            fetch('https://ipapi.co/json/')
+            .then(response => response.json())
+            .then(data => {{
+                // Send this data to Google Analytics
+                gtag('event', 'location_captured_at_signup', {{
+                    'source': 'ip_geolocation_at_signup',
+                    'ip': data.ip,
+                    'city': data.city,
+                    'region': data.region,
+                    'country': data.country_name,
+                    'latitude': data.latitude,
+                    'longitude': data.longitude
+                }});
+
+                // Also try to get weather data for this location
+                if (data.latitude && data.longitude) {{
+                    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${{data.latitude}}&longitude=${{data.longitude}}&current=temperature,wind_speed,wind_direction,weather_code`)
+                    .then(response => response.json())
+                    .then(weatherData => {{
+                        if (weatherData && weatherData.current) {{
+                            gtag('event', 'weather_data_at_signup', {{
+                                'source': 'ip_geolocation',
+                                'temperature': weatherData.current.temperature,
+                                'wind_speed': weatherData.current.wind_speed,
+                                'wind_direction': weatherData.current.wind_direction,
+                                'weather_code': weatherData.current.weather_code
+                            }});
+                        }}
+                    }});
+                }}
+            }});
+        }}
+
+        // Set user properties for better segmentation
+        gtag('set', 'user_properties', {{
+            'signed_up': true,
+            'signup_date': '{timestamp.strftime("%Y-%m-%d")}',
+            'email_domain': '{email.split("@")[1] if "@" in email else "unknown"}'
+        }});
+    </script>
+    ''')
+
+    # Show confirmation notification
+    ui.notify(f'Thanks for signing up, {name}! We\'ll notify you when we launch.',
+              type='positive', position='bottom')

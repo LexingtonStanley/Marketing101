@@ -52,7 +52,7 @@ class Freefallcentral_Database:
         columns_sql = []
         for column in schema['columns']:
             column_def = f"{column['name']} {column['type']}"
-            if column['constraints']:
+            if column.get('constraints'):  # Use get() to avoid KeyError if constraints is None
                 column_def += f" {column['constraints']}"
             columns_sql.append(column_def)
 
@@ -88,6 +88,10 @@ class Freefallcentral_Database:
                 x.error(f"Cannot create table '{table_name}' - schema not found")
                 return False
 
+            # Ensure database connector is initialized
+            if not getattr(self.db_connector, 'initialized', False):
+                await self.db_connector.init()
+
             async with self.db_connector.get_cursor() as cur:
                 # Check if table exists
                 await cur.execute(
@@ -98,9 +102,12 @@ class Freefallcentral_Database:
                     """,
                     (self.table_name,)
                 )
-                exists = await cur.fetchone()
+                exists_result = await cur.fetchone()
 
-                if not exists or not exists[0]:
+                # Handle the result as a dictionary (RealDictCursor) not as a list
+                table_exists = exists_result.get('exists', False) if exists_result else False
+
+                if not table_exists:
                     x.info(f"Table '{self.table_name}' does not exist. Creating...")
 
                     # Generate CREATE TABLE SQL from schema

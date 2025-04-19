@@ -6,7 +6,19 @@ columns:
     constraints: PRIMARY KEY
   - name: name
     type: TEXT
-    constraints:
+    constraints: NOT NULL
   - name: email
     type: TEXT
+    constraints: UNIQUE NOT NULL
+  - name: ip_address
+    type: TEXT
     constraints:
+  - name: user_agent
+    type: TEXT
+    constraints:
+  - name: timestamp
+    type: TIMESTAMP
+    constraints:
+  - name: created_at
+    type: TIMESTAMP
+    constraints: DEFAULT CURRENT_TIMESTAMP
