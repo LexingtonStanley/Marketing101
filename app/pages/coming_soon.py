@@ -32,7 +32,7 @@ def create_coming_soon():
             .abril-fatface {
                 font-family: 'Abril Fatface', cursive;
             }
-            .custom-input::placeholder {
+            .custom-input::value {
                 color: #10454F;
                 opacity: 0.1;
             }
@@ -76,10 +76,12 @@ def create_coming_soon():
             # Sign up form with improved styling
             with ui.row().classes('w-full').style(
                     'display: flex; align-items: center; gap: 1rem; width: 100%; justify-content: center;'):
-                email_input = ui.input().props('placeholder="Enter your email address"').classes('custom-input').style(
+                email_input = ui.input(placeholder="Enter your email address").props(
+                    'input-style="color: #BDE038; font-weight: bold" input-class="font-mono"').style(
                     'padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid rgba(0,0,0,0.1); '
-                    'background: linear-gradient(285deg, #A3AB78 0%, #3f4d4f 100%; width: 25rem; font-size: 1rem; '
-                    'box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);'
+                    'background: linear-gradient(285deg, #3f4d4f 95%, #BDE038 100%); width: 25rem; font-size: 1rem; '
+                    'box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); '
+                    'text-shadow: 0px 0px 10px rgba(0,0,0,0.5);'
                 )
 
                 # Energetic button styling
