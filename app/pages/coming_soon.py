@@ -234,11 +234,12 @@ def create_coming_soon():
                 });
         }
 
-        // FIXED: Get weather data with verified working parameters
+        // FIXED: Get weather data with cloud cover
+        // FIXED: Get weather data with cloud cover as text description
         function getWeatherData(latitude, longitude) {
             console.log(`Getting weather data for: ${latitude}, ${longitude}`);
-
-            // Use simplified parameters that are guaranteed to work
+        
+            // Keep the cloud_cover numeric parameter in the API request
             return fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature,weather_code,wind_speed_10m,wind_direction_10m,is_day,cloud_cover`)
                 .then(response => {
                     if (!response.ok) {
@@ -249,14 +250,53 @@ def create_coming_soon():
                 .then(data => {
                     console.log("Weather data response:", data);
                     if (data && data.current) {
-                        return {
+                        // Extract numeric values
+                        let cloudCoverNumeric = data.current.cloud_cover;
+                        let weatherCode = data.current.weather_code;
+                        
+                        // If cloud_cover is missing but we have a weather code, estimate it
+                        if (cloudCoverNumeric === undefined && weatherCode !== undefined) {
+                            // Estimate cloud cover based on weather code
+                            if (weatherCode === 0) cloudCoverNumeric = 0;           // Clear sky
+                            else if (weatherCode === 1) cloudCoverNumeric = 15;     // Mainly clear
+                            else if (weatherCode === 2) cloudCoverNumeric = 50;     // Partly cloudy
+                            else if (weatherCode === 3) cloudCoverNumeric = 95;     // Overcast
+                            else if ([45, 48].includes(weatherCode)) cloudCoverNumeric = 75; // Fog
+                            else if ([51, 53, 55, 56, 57].includes(weatherCode)) cloudCoverNumeric = 85; // Drizzle
+                            else if ([61, 63, 65, 66, 67].includes(weatherCode)) cloudCoverNumeric = 90; // Rain
+                            else if ([71, 73, 75, 77].includes(weatherCode)) cloudCoverNumeric = 90; // Snow
+                            else if ([80, 81, 82, 85, 86].includes(weatherCode)) cloudCoverNumeric = 80; // Showers
+                            else if ([95, 96, 99].includes(weatherCode)) cloudCoverNumeric = 95; // Thunderstorm
+                        }
+                        
+                        // Convert numeric cloud cover to text description
+                        let cloudCoverText;
+                        if (cloudCoverNumeric !== undefined) {
+                            if (cloudCoverNumeric < 10) cloudCoverText = "Clear";
+                            else if (cloudCoverNumeric < 30) cloudCoverText = "Mostly Clear";
+                            else if (cloudCoverNumeric < 60) cloudCoverText = "Partly Cloudy";
+                            else if (cloudCoverNumeric < 80) cloudCoverText = "Mostly Cloudy";
+                            else cloudCoverText = "Overcast";
+                        } else {
+                            // Fallback based on weather code if we couldn't get cloud cover
+                            if (weatherCode === 0) cloudCoverText = "Clear";
+                            else if (weatherCode === 1) cloudCoverText = "Mostly Clear";
+                            else if (weatherCode === 2) cloudCoverText = "Partly Cloudy";
+                            else if (weatherCode === 3) cloudCoverText = "Overcast";
+                            else cloudCoverText = "Varied"; // Generic fallback
+                        }
+                        
+                        const weatherData = {
                             temperature: data.current.temperature,
                             weather_code: data.current.weather_code,
                             wind_speed: data.current.wind_speed_10m,
                             wind_direction: data.current.wind_direction_10m,
                             is_day: data.current.is_day,
-                            cloud_cover: data.current.cloud_cover || null
+                            cloud_cover: cloudCoverText // Store as text description
                         };
+                        
+                        console.log("Processed weather data:", weatherData);
+                        return weatherData;
                     }
                     return {};
                 })
@@ -544,7 +584,7 @@ def create_coming_soon():
                     'position: relative; z-index: 1; background-color: rgba(16,69,79,0.35); backdrop-filter: blur(1.5px); '
                     'padding: 3.5rem; border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.15); '
                     'box-shadow: 0 15px 35px rgba(0,0,0,0.4); display: flex; flex-direction: column; align-items: center; '
-                    'text-align: center; max-width: 1200px; transition: all 0.3s ease; margin: 2rem 0;'):
+                    'text-align: center; max-width: 800px; transition: all 0.3s ease; margin: 2rem 0;'):
                 # Logo section with enhanced visibility
                 with ui.element('div').classes('float-animation').style('margin-bottom: 2rem;'):
                     ui.label('Free Fall Central').classes('abril-fatface text-with-stroke').style(
@@ -617,19 +657,90 @@ def create_coming_soon():
 
 
 async def handle_signup_with_client_info(name, email):
-    # Get client info from JavaScript
-    ip_result = await ui.run_javascript('return document.getElementById("hidden_ip_address").value;')
-    ua_result = await ui.run_javascript('return document.getElementById("hidden_user_agent").value;')
+    # Validation
+    if not name or not email:
+        ui.notify('Please provide both name and email', type='negative', position='bottom')
+        return
 
-    # FIXED: Get individual pieces of data separately to avoid timeout issues
+    # Get client info from JavaScript
+    ip_result = await ui.run_javascript('return document.getElementById("hidden_ip_address")?.value || "unknown";')
+    ua_result = await ui.run_javascript('return document.getElementById("hidden_user_agent")?.value || "unknown";')
+
+    # Debug: Force update of time on page and confirm weather data exists
+    await ui.run_javascript('''
+        // Force update of tracking data timing
+        let currentTime = new Date();
+        let timeSpent = Math.floor((currentTime - startTime) / 1000);
+        window.trackingData.timeOnPage = timeSpent;
+
+        // Ensure weather data structure exists
+        if (!window.trackingData.weather) {
+            window.trackingData.weather = {};
+            console.log("Created missing weather data structure");
+        }
+
+        // Log what data we have for debugging
+        console.log("Current tracking data before submission:", JSON.stringify(window.trackingData));
+    ''')
+
+    # FIXED: Extract data with default values to prevent null errors
     try:
         # Get location data
         location_json = await ui.run_javascript('return JSON.stringify(window.trackingData.location || {});')
         location = json.loads(location_json) if location_json else {}
 
-        # Get weather data
+        # If location coordinates exist but weather doesn't, try to fetch weather now
+        if (location.get('latitude') and location.get('longitude') and
+                not await ui.run_javascript(
+                    'return window.trackingData.weather && Object.keys(window.trackingData.weather).length > 0;')):
+            await ui.run_javascript('''
+                // Weather data is missing but we have coordinates - try to fetch it now
+                console.log("Weather data missing but coordinates available - fetching now");
+                const latitude = window.trackingData.location.latitude;
+                const longitude = window.trackingData.location.longitude;
+
+                // Call weather API directly
+                const fetchWeather = async () => {
+                    try {
+                        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature,weather_code,wind_speed_10m,wind_direction_10m,is_day`;
+                        console.log("Fetching weather from:", url);
+
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            throw new Error(`Weather API error: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        console.log("Weather data received:", data);
+
+                        if (data && data.current) {
+                            window.trackingData.weather = {
+                                temperature: data.current.temperature,
+                                weather_code: data.current.weather_code,
+                                wind_speed: data.current.wind_speed_10m,
+                                wind_direction: data.current.wind_direction_10m,
+                                is_day: data.current.is_day,
+                                cloud_cover: null
+                            };
+                            console.log("Weather data stored:", window.trackingData.weather);
+                        } else {
+                            console.log("Weather data response has unexpected format");
+                        }
+                    } catch (error) {
+                        console.error("Direct weather fetch failed:", error);
+                    }
+                };
+
+                await fetchWeather();
+            ''')
+
+        # Now get the weather data (which may have just been updated)
         weather_json = await ui.run_javascript('return JSON.stringify(window.trackingData.weather || {});')
         weather = json.loads(weather_json) if weather_json else {}
+
+        # Print debug info to server console
+        print(f"Location data: {location}")
+        print(f"Weather data: {weather}")
 
         # Get device data
         device_json = await ui.run_javascript('return JSON.stringify(window.trackingData.device || {});')
@@ -646,11 +757,11 @@ async def handle_signup_with_client_info(name, email):
         device = {}
         session = {}
 
-    # Extract values for database storage with defaults
+    # Extract values for database storage with proper defaults
     ip_address = ip_result if ip_result else 'unknown'
     user_agent = ua_result if ua_result else 'unknown'
 
-    # Location data
+    # Location data with fallbacks
     location_source = location.get('source', None)
     latitude = location.get('latitude', None)
     longitude = location.get('longitude', None)
@@ -659,14 +770,14 @@ async def handle_signup_with_client_info(name, email):
     region = location.get('region', None)
     country = location.get('country', None)
 
-    # Weather data
+    # Weather data with fallbacks
     temperature = weather.get('temperature', None)
     wind_speed = weather.get('wind_speed', None)
     wind_direction = weather.get('wind_direction', None)
     weather_code = weather.get('weather_code', None)
     cloud_cover = weather.get('cloud_cover', None)
 
-    # Device data
+    # Device data with fallbacks
     screen_width = device.get('screen_width', None)
     screen_height = device.get('screen_height', None)
     pixel_ratio = device.get('pixel_ratio', None)
@@ -675,7 +786,7 @@ async def handle_signup_with_client_info(name, email):
     timezone = device.get('timezone', None)
     connection_type = device.get('connection_type', None)
 
-    # Session data
+    # Session data with fallbacks
     referrer = session.get('referrer', None)
 
     # Validate email format
@@ -686,6 +797,9 @@ async def handle_signup_with_client_info(name, email):
 
     # Get the current timestamp
     timestamp = datetime.now()
+
+    # Debug log before database insertion
+    print(f"Inserting into database - Weather data: temperature={temperature}, code={weather_code}, wind={wind_speed}")
 
     # Store data in database
     try:
@@ -720,8 +834,8 @@ async def handle_signup_with_client_info(name, email):
         print(f"Successfully stored signup with tracking data: {name} ({email})")
         # Log the key weather and location details for debugging
         print(
-            f"Weather data - Temperature: {temperature}, Wind: {wind_speed}, Code: {weather_code}, Clouds: {cloud_cover}")
-        print(f"Location data - City: {city}, Region: {region}, Country: {country}")
+            f"Weather data stored - Temperature: {temperature}, Wind: {wind_speed}, Code: {weather_code}")
+        print(f"Location data stored - City: {city}, Region: {region}, Country: {country}")
 
     except Exception as e:
         error_message = str(e)
@@ -733,30 +847,6 @@ async def handle_signup_with_client_info(name, email):
         else:
             ui.notify('There was an error processing your signup', type='negative', position='bottom')
             return
-
-    # Track this signup event in Google Analytics with all the data we have
-    ui.add_body_html(f'''
-    <script>
-        // Get all our tracking data
-        let trackingData = window.trackingData || {{}};
-
-        // Track the signup event with all available data
-        gtag('event', 'signup_complete', {{
-            'event_category': 'conversion',
-            'event_label': 'newsletter',
-            'user_name': '{name}',
-            'timestamp': '{timestamp}',
-            'tracking_data': trackingData
-        }});
-
-        // Set user properties for better segmentation
-        gtag('set', 'user_properties', {{
-            'signed_up': true,
-            'signup_date': '{timestamp.strftime("%Y-%m-%d")}',
-            'email_domain': '{email.split("@")[1] if "@" in email else "unknown"}'
-        }});
-    </script>
-    ''')
 
     # Show confirmation notification with weather info if available
     if weather_code is not None:
@@ -793,8 +883,9 @@ async def handle_signup_with_client_info(name, email):
         weather_description = weather_descriptions.get(weather_code, "Unknown weather")
 
         if city:
+            # Removed cloud_cover from the notification since it might be null
             ui.notify(
-                f'Thanks for signing up, {name}! Weather in {city} is {weather_description} with {cloud_cover}% cloud cover.',
+                f'Thanks for signing up, {name}! Weather in {city} is {weather_description}.',
                 type='positive', position='bottom')
         else:
             ui.notify(f'Thanks for signing up, {name}! Current weather: {weather_description}',

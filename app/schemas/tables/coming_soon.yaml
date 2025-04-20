@@ -55,7 +55,7 @@ columns:
     type: INTEGER
     constraints:
   - name: cloud_cover
-    type: FLOAT
+    type: TEXT
     constraints:
   # Device data
   - name: screen_width
